@@ -1,0 +1,61 @@
+#+title: pairing on quadratic
+
+* Setup
+** Install NPM
+#+begin_src tmux :session ":setup"
+sudo apt-get install -y nodejs
+#+end_src
+** Install rustup
+#+begin_src tmux :session ":setup"
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+#+end_src
+** Install wasm-pack
+#+begin_src tmux :session ":setup"
+source "$HOME/.cargo/env"
+curl https://rustwasm.github.io/wasm-pack/installer/init.sh -sSf | sh
+#+end_src
+** Install WASM toolchain
+#+begin_src tmux :session ":setup"
+rustup target add wasm32-unknown-unknown
+#+end_src
+** Install cargo watch
+#+begin_src tmux :session ":setup"
+cargo install cargo-watch
+#+end_src
+** Install postgresql
+*** helm
+#+begin_src tmux :session ":setup"
+helm repo add bitnami https://charts.bitnami.com/bitnami
+helm install  quad bitnami/postgresql
+#+end_src
+*** local
+#+begin_src tmux :session ":setup"
+sudo apt-get install -y postgresql-15
+sudo /etc/init.d/postgresql start
+sudo -u postgres createuser --superuser $USER
+sudo -u postgres createdb $USER
+#+end_src
+* Test postgres connection
+
+#+begin_src sql-mode :exports both :session none
+select 1;
+#+end_src
+
+#+RESULTS:
+:  ?column?
+: ----------
+:         1
+: (1 row)
+:
+
+* Run Quadratic
+** Run front-end
+#+begin_src tmux :session ":front-end"
+cd ~/quadratic/quadratic-client
+npm i
+#+end_src
+** Run server
+#+begin_src tmux :session ":server"
+cd ~/quadratic/quadratic-api
+npm i
+#+end_src
