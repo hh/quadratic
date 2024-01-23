@@ -36,6 +36,26 @@ sudo -u postgres createuser --superuser $USER
 sudo -u postgres createdb $USER
 #+end_src
 * Test postgres connection
+** get password
+#+begin_src shell
+export POSTGRES_PASSWORD=$(kubectl get secret --namespace hh quad-postgresql -o jsonpath="{.data.postgres-password}" | base64 -d)
+echo $POSTGRES_PASSWORD
+#+end_src
+
+#+RESULTS:
+#+begin_example
+5LLoKfiPrY
+#+end_example
+** get svc
+#+begin_src shell
+kubectl get svc quad-postgresql
+#+end_src
+
+#+RESULTS:
+#+begin_example
+NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
+quad-postgresql   ClusterIP   10.103.189.99   <none>        5432/TCP   9m21s
+#+end_example
 
 #+begin_src sql-mode :exports both :session none
 select 1;
@@ -50,12 +70,15 @@ select 1;
 
 * Run Quadratic
 ** Run front-end
-#+begin_src tmux :session ":front-end"
+#+begin_src tmux :session ":client"
 cd ~/quadratic/quadratic-client
 npm i
 #+end_src
+
+#+RESULTS:
+
 ** Run server
-#+begin_src tmux :session ":server"
+#+begin_src tmux :session ":api"
 cd ~/quadratic/quadratic-api
 npm i
 #+end_src
