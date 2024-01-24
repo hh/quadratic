@@ -3,8 +3,12 @@
 * Setup
 ** Install NPM
 #+begin_src tmux :session ":setup"
+sudo apt-get update
 sudo apt-get install -y nodejs
 #+end_src
+
+#+RESULTS:
+
 ** Install rustup
 #+begin_src tmux :session ":setup"
 curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
@@ -23,29 +27,122 @@ rustup target add wasm32-unknown-unknown
 cargo install cargo-watch
 #+end_src
 ** Install postgresql
-*** helm
-#+begin_src tmux :session ":setup"
-helm repo add bitnami https://charts.bitnami.com/bitnami
-helm install  quad bitnami/postgresql
-#+end_src
-*** local
-#+begin_src tmux :session ":setup"
-sudo apt-get install -y postgresql-15
-sudo /etc/init.d/postgresql start
-sudo -u postgres createuser --superuser $USER
-sudo -u postgres createdb $USER
-#+end_src
-* Test postgres connection
-** get password
+*** k8s deployment
 #+begin_src shell
-export POSTGRES_PASSWORD=$(kubectl get secret --namespace hh quad-postgresql -o jsonpath="{.data.postgres-password}" | base64 -d)
-echo $POSTGRES_PASSWORD
+helm delete quad
 #+end_src
 
 #+RESULTS:
 #+begin_example
-5LLoKfiPrY
+release "quad" uninstalled
 #+end_example
+
+#+begin_src shell
+helm repo add bitnami https://charts.bitnami.com/bitnami
+#+end_src
+
+#+RESULTS:
+#+begin_example
+"bitnami" already exists with the same configuration, skipping
+#+end_example
+
+#+begin_src shell
+helm upgrade --install  quad bitnami/postgresql --set auth.postgresPassword=PASSWORD
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Release "quad" does not exist. Installing it now.
+NAME: quad
+LAST DEPLOYED: Wed Jan 24 16:28:03 2024
+NAMESPACE: baracus
+STATUS: deployed
+REVISION: 1
+TEST SUITE: None
+NOTES:
+CHART NAME: postgresql
+CHART VERSION: 13.4.1
+APP VERSION: 16.1.0
+
+,** Please be patient while the chart is being deployed **
+
+PostgreSQL can be accessed via port 5432 on the following DNS names from within your cluster:
+
+    quad-postgresql.baracus.svc.cluster.local - Read/Write connection
+
+To get the password for "postgres" run:
+
+    export POSTGRES_PASSWORD=$(kubectl get secret --namespace baracus quad-postgresql -o jsonpath="{.data.postgres-password}" | base64 -d)
+
+To connect to your database run the following command:
+
+    kubectl run quad-postgresql-client --rm --tty -i --restart='Never' --namespace baracus --image docker.io/bitnami/postgresql:16.1.0-debian-11-r22 --env="PGPASSWORD=$POSTGRES_PASSWORD" \
+      --command -- psql --host quad-postgresql -U postgres -d postgres -p 5432
+
+    > NOTE: If you access the container using bash, make sure that you execute "/opt/bitnami/scripts/postgresql/entrypoint.sh /bin/bash" in order to avoid the error "psql: local user with ID 1001} does not exist"
+
+To connect to your database from outside the cluster execute the following commands:
+
+    kubectl port-forward --namespace baracus svc/quad-postgresql 5432:5432 &
+    PGPASSWORD="$POSTGRES_PASSWORD" psql --host 127.0.0.1 -U postgres -d postgres -p 5432
+
+WARNING: The configured password will be ignored on new installation in case when previous PostgreSQL release was deleted through the helm command. In that case, old PVC will have an old password, and setting it through helm won't take effect. Deleting persistent volumes (PVs) will solve the issue.
+#+end_example
+
+*** local deployment
+#+begin_src shell
+sudo apt-get install -y postgresql-15
+#+end_src
+
+#+RESULTS:
+#+begin_example
+Reading package lists...
+Building dependency tree...
+Reading state information...
+postgresql-15 is already the newest version (15.5-0ubuntu0.23.10.1).
+0 upgraded, 0 newly installed, 0 to remove and 9 not upgraded.
+#+end_example
+
+#+begin_src shell
+sudo /etc/init.d/postgresql start
+#+end_src
+
+#+RESULTS:
+#+begin_example
+ ,* Starting PostgreSQL 15 database server
+   ...done.
+#+end_example
+
+#+begin_src shell
+sudo -u postgres createuser --superuser $USER
+#+end_src
+
+#+RESULTS:
+#+begin_example
+#+end_example
+
+#+begin_src shell
+sudo -u postgres createdb $USER
+#+end_src
+
+#+RESULTS:
+#+begin_example
+#+end_example
+
+
+* Test postgres connection
+** get password
+#+NAME: postgres_password
+#+begin_src shell
+export POSTGRES_PASSWORD=$(kubectl get secret quad-postgresql -o jsonpath="{.data.postgres-password}" | base64 -d)
+echo $POSTGRES_PASSWORD
+#+end_src
+
+#+RESULTS: postgres_password
+#+begin_example
+PASSWORD
+#+end_example
+
 ** get svc
 #+begin_src shell
 kubectl get svc quad-postgresql
@@ -56,8 +153,75 @@ kubectl get svc quad-postgresql
 NAME              TYPE        CLUSTER-IP      EXTERNAL-IP   PORT(S)    AGE
 quad-postgresql   ClusterIP   10.103.189.99   <none>        5432/TCP   9m21s
 #+end_example
+** configure sql-mode
+#+begin_src elisp
+(setenv "PGHOST" "quad-postgresql")
+(setenv "PGUSER" "postgres")
+(setenv "PGDATABASE" "postgres")
+(setenv "PGPASS" "PASSWORD")
+(set (make-local-variable 'org-babel-default-header-args:sql-mode)
+            ;; Set up all sql-mode blocks to be postgres and literate
+            '((:results . "replace code")
+              (:product . "postgres")
+              (:session . "none")
+              (:noweb . "yes")
+              (:comments . "no")
+              (:wrap . "SRC example")))
+(set (make-local-variable 'sql-server)
+           (if (getenv "PGHOST")
+               (getenv "PGHOST")
+             (if (file-exists-p "/var/run/secrets/kubernetes.io/serviceaccount/namespace")
+                 "snoopdb.apisnoop"
+               "localhost"
+               )))
+(set (make-local-variable 'sql-port)
+     (if (getenv "PGPORT")
+         (string-to-number (getenv "PGPORT"))
+       5432))
+(set (make-local-variable 'sql-user)
+     (if (getenv "PGUSER")
+         (getenv "PGUSER")
+       "apisnoop"))
+(set (make-local-variable 'sql-database)
+     (if (getenv "PGDATABASE")
+         (getenv "PGDATABASE")
+       "apisnoop"))
+(set (make-local-variable 'sql-password)
+     (if (getenv "PGPASS")
+         (getenv "PGPASS")
+       "PASSWORD"))
+(set (make-local-variable 'sql-product)
+     '(quote postgres))
+(set (make-local-variable 'sql-connection-alist)
+     (list
+      ;; setting these allows for the connection to be
+      ;; created on the fly
+      (list 'none
+            (list 'sql-product '(quote postgres))
+            ;; (list 'sql-user sql-user)
+            (list 'sql-database (concat "postgresql://" sql-user ":" sql-password "@" sql-server "/" sql-database))
+            )))
+            ;; (list 'sql-port sql-port)
+            ;; (list 'sql-server sql-ser$ver)))
+#+end_src
+
+#+RESULTS:
+| none | (sql-product 'postgres) | (sql-database postgresql://postgres:PASSWORD@quad-postgresql/postgres) |
 
 #+begin_src sql-mode :exports both :session none
+select 1;
+#+end_src
+
+#+RESULTS:
+#+begin_SRC example
+ ?column?
+----------
+        1
+(1 row)
+
+#+end_SRC
+
+#+begin_src sql-mode :exports both :session socket
 select 1;
 #+end_src
 
@@ -68,14 +232,39 @@ select 1;
 : (1 row)
 :
 
+*
+* Configure Quadratic
+** api
+#+begin_src shell :tangle quadratic-api/.env
+DATABASE_URL="postgresql://postgres:PASSWORD@quad-postgresql/postgres"
+CORS='http://localhost:3000'
+AUTH0_JWKS_URI='https://dev.us.auth0.com/.well-known/jwks.json'
+AUTH0_ISSUER='https://auth-dev.quadratic.to/'
+AUTH0_CLIENT_ID=''
+AUTH0_CLIENT_SECRET=''
+AUTH0_DOMAIN='dev-.us.auth0.com'
+OPENAI_API_KEY='...'
+SENTRY_DSN='...'
+#+end_src
+** client
+#+begin_src shell :tangle quadratic-client/.env
+VITE_GOOGLE_ANALYTICS_GTAG=G-0000000000
+VITE_AMPLITUDE_ANALYTICS_API_KEY=
+VITE_MIXPANEL_ANALYTICS_KEY=
+VITE_SENTRY_DSN=https://xxxxxxxxxxxxxxxxxx@xxxxxxxxxxxx.ingest.sentry.io/xxxxxxxxxxxx
+VITE_DEBUG=0 // use =1 to enable debug flags
+VITE_AUTH0_DOMAIN=auth-dev.quadratic.to
+VITE_AUTH0_CLIENT_ID=XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
+VITE_AUTH0_AUDIENCE=https://localhost:8000
+VITE_AUTH0_ISSUER=https://auth-dev.quadratic.to/
+VITE_QUADRATIC_API_URL=http://localhost:8000
+#+end_src
 * Run Quadratic
 ** Run front-end
 #+begin_src tmux :session ":client"
 cd ~/quadratic/quadratic-client
 npm i
 #+end_src
-
-#+RESULTS:
 
 ** Run server
 #+begin_src tmux :session ":api"
